@@ -93,8 +93,48 @@ function phoneHrefFrom(phone: string) {
   return phone.replace(/[^\d+]/g, "");
 }
 
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function withFallbackText(value: unknown, fallback: string) {
+  return hasText(value) ? value.trim() : fallback;
+}
+
 function withFallbackArray<T>(value: T[] | undefined, fallback: T[]) {
   return value && value.length > 0 ? value : fallback;
+}
+
+function withFallbackStringArray(value: string[] | undefined, fallback: string[]) {
+  const cleaned = value?.filter(hasText).map((item) => item.trim()) ?? [];
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+function withFallbackImage(
+  value: Partial<SiteContent["hero"]["mainImage"]> | undefined,
+  fallback: SiteContent["hero"]["mainImage"],
+) {
+  if (!hasText(value?.image)) {
+    return fallback;
+  }
+
+  return {
+    image: value.image,
+    alt: withFallbackText(value.alt, fallback.alt),
+    category: withFallbackText(value.category, fallback.category ?? ""),
+  };
+}
+
+function withFallbackSections(
+  value: Partial<SiteContent["sections"]> | undefined,
+  fallback: SiteContent["sections"],
+) {
+  return Object.fromEntries(
+    Object.entries(fallback).map(([key, fallbackValue]) => [
+      key,
+      withFallbackText(value?.[key as keyof SiteContent["sections"]], fallbackValue),
+    ]),
+  ) as SiteContent["sections"];
 }
 
 function normalizeServiceIcon(icon: unknown): ServiceIcon {
@@ -113,57 +153,103 @@ function normalizeServiceIcon(icon: unknown): ServiceIcon {
 
 function normalizeContent(cms: CmsContent): SiteContent {
   const settings = cms.settings ?? {};
-  const phone = settings.phone || fallbackContent.contact.phone;
+  const phone = withFallbackText(settings.phone, fallbackContent.contact.phone);
+  const hero = cms.hero ?? {};
+  const stats =
+    settings.stats
+      ?.filter((stat) => hasText(stat.value) && hasText(stat.label))
+      .map((stat) => ({
+        value: stat.value.trim(),
+        label: stat.label.trim(),
+      })) ?? [];
+  const eventTypes =
+    cms.eventTypes
+      ?.filter((event) => hasText(event.title) || hasText(event.copy))
+      .map((event, index) => {
+        const fallback = fallbackContent.eventTypes[index] ?? fallbackContent.eventTypes[0];
+        return {
+          title: withFallbackText(event.title, fallback.title),
+          accent: withFallbackText(event.accent, fallback.accent),
+          copy: withFallbackText(event.copy, fallback.copy),
+        };
+      }) ?? [];
+  const services =
+    cms.services
+      ?.filter((service) => hasText(service.title) || hasText(service.description))
+      .map((service, index) => {
+        const fallback = fallbackContent.services[index] ?? fallbackContent.services[0];
+        return {
+          title: withFallbackText(service.title, fallback.title),
+          icon: normalizeServiceIcon(service.icon || fallback.icon),
+          description: withFallbackText(service.description, fallback.description),
+          image: withFallbackImage(service.image, fallback.image),
+        };
+      }) ?? [];
+  const packages =
+    cms.packages
+      ?.filter((item) => hasText(item.name) || hasText(item.idealFor))
+      .map((item, index) => {
+        const fallback = fallbackContent.packages[index] ?? fallbackContent.packages[0];
+        return {
+          name: withFallbackText(item.name, fallback.name),
+          idealFor: withFallbackText(item.idealFor, fallback.idealFor),
+          includes: withFallbackStringArray(item.includes, fallback.includes),
+        };
+      }) ?? [];
+  const galleryImages =
+    cms.galleryImages
+      ?.filter((image) => hasText(image.image) || hasText(image.alt) || hasText(image.category))
+      .map((image, index) => {
+        const fallback = fallbackContent.galleryImages[index] ?? fallbackContent.galleryImages[0];
+        return {
+          image: withFallbackText(image.image, fallback.image),
+          alt: withFallbackText(image.alt, fallback.alt),
+          category: withFallbackText(image.category, fallback.category ?? ""),
+        };
+      }) ?? [];
 
   return {
     brand: {
-      name: settings.brandName || fallbackContent.brand.name,
-      descriptor: settings.descriptor || fallbackContent.brand.descriptor,
-      tagline: settings.tagline || fallbackContent.brand.tagline,
+      name: withFallbackText(settings.brandName, fallbackContent.brand.name),
+      descriptor: withFallbackText(settings.descriptor, fallbackContent.brand.descriptor),
+      tagline: withFallbackText(settings.tagline, fallbackContent.brand.tagline),
     },
     contact: {
-      facebookUrl: settings.facebookUrl || fallbackContent.contact.facebookUrl,
+      facebookUrl: withFallbackText(
+        settings.facebookUrl,
+        fallbackContent.contact.facebookUrl,
+      ),
       phone,
       phoneHref:
-        settings.phoneHref || phoneHrefFrom(phone) || fallbackContent.contact.phoneHref,
-      locationLabel: settings.locationLabel || fallbackContent.contact.locationLabel,
+        withFallbackText(settings.phoneHref, phoneHrefFrom(phone)) ||
+        fallbackContent.contact.phoneHref,
+      locationLabel: withFallbackText(
+        settings.locationLabel,
+        fallbackContent.contact.locationLabel,
+      ),
     },
     hero: {
-      ...fallbackContent.hero,
-      ...cms.hero,
-      mainImage: cms.hero?.mainImage?.image
-        ? cms.hero.mainImage
-        : fallbackContent.hero.mainImage,
-      sideImage: cms.hero?.sideImage?.image
-        ? cms.hero.sideImage
-        : fallbackContent.hero.sideImage,
+      headline: withFallbackText(hero.headline, fallbackContent.hero.headline),
+      lede: withFallbackText(hero.lede, fallbackContent.hero.lede),
+      primaryCtaLabel: withFallbackText(
+        hero.primaryCtaLabel,
+        fallbackContent.hero.primaryCtaLabel,
+      ),
+      secondaryCtaLabel: withFallbackText(
+        hero.secondaryCtaLabel,
+        fallbackContent.hero.secondaryCtaLabel,
+      ),
+      note: withFallbackText(hero.note, fallbackContent.hero.note),
+      mainImage: withFallbackImage(hero.mainImage, fallbackContent.hero.mainImage),
+      sideImage: withFallbackImage(hero.sideImage, fallbackContent.hero.sideImage),
     },
-    sections: {
-      ...fallbackContent.sections,
-      ...(settings.sections ?? {}),
-    },
-    stats: withFallbackArray(settings.stats, fallbackContent.stats),
-    eventTypes: withFallbackArray(cms.eventTypes, fallbackContent.eventTypes),
-    services: withFallbackArray(
-      cms.services
-        ?.filter((service) => service.title && service.description)
-        .map((service, index) => ({
-          title: service.title || fallbackContent.services[index]?.title || "Service",
-          icon: normalizeServiceIcon(service.icon),
-          description:
-            service.description ||
-            fallbackContent.services[index]?.description ||
-            "A Celestia event service.",
-          image:
-            service.image?.image && service.image.alt
-              ? service.image
-              : fallbackContent.services[index]?.image || fallbackContent.hero.mainImage,
-        })),
-      fallbackContent.services,
-    ),
-    packages: withFallbackArray(cms.packages, fallbackContent.packages),
-    galleryImages: withFallbackArray(cms.galleryImages, fallbackContent.galleryImages),
-    whyPoints: withFallbackArray(settings.whyPoints, fallbackContent.whyPoints),
+    sections: withFallbackSections(settings.sections, fallbackContent.sections),
+    stats: withFallbackArray(stats, fallbackContent.stats),
+    eventTypes: withFallbackArray(eventTypes, fallbackContent.eventTypes),
+    services: withFallbackArray(services, fallbackContent.services),
+    packages: withFallbackArray(packages, fallbackContent.packages),
+    galleryImages: withFallbackArray(galleryImages, fallbackContent.galleryImages),
+    whyPoints: withFallbackStringArray(settings.whyPoints, fallbackContent.whyPoints),
   };
 }
 
